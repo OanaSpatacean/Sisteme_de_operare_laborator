@@ -7,7 +7,7 @@ then
     exit 1
 fi
 
-director=$1
+director=$
 output_file=$2
 total_caractere=0
 
