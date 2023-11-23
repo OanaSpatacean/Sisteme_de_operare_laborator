@@ -147,17 +147,16 @@ void citeste_lungime_inaltime_bmp(char *caleIn, char *numeFisier, int *lungime, 
     close(fisierBMP);
 }
 
-void covertireGri(int fisierIn, int fisierBMP, int lungime, int inaltime) 
+void covertireGri(int fisierIn, int lungime, int inaltime) 
 {
     unsigned char pixel[3]; // fiecare pixel are 3 componente (roșu, verde, albastru)
     unsigned char pixel_gri;
     double P_gri;
 
     lseek(fisierIn, 0, SEEK_SET);
-    for (int i = 0; i < 54; i++) 
+    for (int i = 0; i < 54; i++) //mută cursorul la începutul imaginii (după header)
     {
         read(fisierIn, buffer, sizeof(char));
-        write(fisierBMP, buffer, sizeof(char));
     }
 
     // Parcurge fiecare pixel și aplică formula pentru conversia la nivel de gri
@@ -173,31 +172,23 @@ void covertireGri(int fisierIn, int fisierBMP, int lungime, int inaltime)
             // Convertirea la tipul unsigned char (1 octet)
             pixel_gri = (unsigned char)P_gri;
 
+            //mută cursorul înapoi la locația pixelului original
+            lseek(fisierIn, -3, SEEK_CUR);
+
             // Scrierea pixelului în noul fișier
-            write(fisierBMP, &pixel_gri, sizeof(char));
-            write(fisierBMP, &pixel_gri, sizeof(char));
-            write(fisierBMP, &pixel_gri, sizeof(char));
+            write(fisierIn, &pixel_gri, sizeof(char)); //rosu
+            write(fisierIn, &pixel_gri, sizeof(char)); //verde
+            write(fisierIn, &pixel_gri, sizeof(char)); //albastru
         }
     }
 
-    close(fisierBMP);
     close(fisierIn);
 }
 
-void procesulCeluiDeAlDoileaCopil(char *caleFisierOut, char *caleOut, int fisierIn, int lungime, int inaltime) 
+void procesulCeluiDeAlDoileaCopil(int fisierIn, int lungime, int inaltime) 
 {
-    sprintf(caleFisierOut, "%s/%s_grayscale.bmp", caleOut, intrare->d_name); //sa citească întreg conținutul fișierului
-    int fisierBMP = open(caleFisierOut, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR);
-
-    if (fisierBMP == -1) 
-    {
-        perror("Eroare la deschiderea fisierului de iesire statistica.txt");
-    }
-
-    covertireGri(fisierIn, fisierBMP, lungime, inaltime);
-
-    close(fisierBMP);
-    exit(0);
+    covertireGri(fisierIn, lungime, inaltime);
+    exit(0); //succes
 }
 
 void procesulTataluiPtCopilulDoi(int PID)
@@ -246,14 +237,6 @@ void extrageInfo(char *caleIn, char *caleOut)
         return;
     }
 
-    fisierIn = open(caleFisier, O_RDONLY);
-
-    if (fisierIn == -1) 
-    {
-        perror("Eroare la deschiderea fisierului de intrare");
-        return;
-    }
-
     if (S_ISREG(fisierStat.st_mode)) //fișier obișnuit
     {
         sprintf(buffer, "nume fisier: %s\n", intrare->d_name);
@@ -268,6 +251,14 @@ void extrageInfo(char *caleIn, char *caleOut)
             liniiScrise = liniiScrise + 10;
 
             //covertirea grayscale
+            fisierIn = open(caleFisier, O_RDWR);
+
+            if (fisierIn == -1) 
+            {
+                perror("Eroare la deschiderea fisierului de intrare");
+                return;
+            }
+
             int convertPID = fork(); // pentru fiecare intrare ce reprezinta o imagine .bmp procesul părinte va crea un al doilea proces 
 
             if (convertPID < 0) 
@@ -276,7 +267,7 @@ void extrageInfo(char *caleIn, char *caleOut)
             } 
             else if (convertPID == 0) 
             {
-                procesulCeluiDeAlDoileaCopil(caleFisierOut, caleOut, fisierIn, lungime, inaltime);
+                procesulCeluiDeAlDoileaCopil(fisierIn, lungime, inaltime);
             }
             else if (convertPID > 0) 
             {
