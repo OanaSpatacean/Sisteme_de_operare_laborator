@@ -1,1 +1,12 @@
 Acesta e un fisier obisnuit cu extensia '.txt'.
+Ana are mere c.
+Ana are mere.
+Pun virgula inainte de, si.
+propozitie fara litera mare.
+Propozitie fara punct
+Propozitie corecta?
+Alta propozitie corecta.
+Cccc.
+Prop c fara punct
+Eu merg la mare.
+Introduc c in alta prop corecta.
