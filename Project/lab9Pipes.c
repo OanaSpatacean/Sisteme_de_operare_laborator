@@ -245,20 +245,6 @@ void procesTataFisierObisnuitPropozitii(int PID, int n, char *caracter)
     }
 }
 
-void numaraPropozitiiCorecte(int continutPipe, char *caracter)
-{
-    if (dup2(continutPipe, 0) == -1) //redirecteaza stdin spre continutPipe
-    {
-        perror("Eroare la redirectarea spre stdin");
-        close(continutPipe);
-        exit(-1);
-    }
-
-    execlp("bash", "bash", "shellscript.sh", caracter, NULL);
-    perror("Eroare la executarea script-ului");
-    exit(-1);
-}
-
 void extrageInfo(char *caleIn, char *caleOut, char *caracter) 
 {
     struct stat fisierStat;
