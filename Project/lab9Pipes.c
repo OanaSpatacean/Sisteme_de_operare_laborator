@@ -126,12 +126,12 @@ void scrie_permisiuni_altii(mode_t mode, char buffer[1024])
     sprintf(buffer, "drepturi de acces altii: %s\n\n", permisiune);
 }
 
-void citeste_lungime_inaltime_bmp(char *caleIn, char *numeFisier, int *lungime, int *inaltime)
+void citeste_lungime_inaltime_bmp(char *directorIn, char *numeFisier, int *lungime, int *inaltime)
 {
     char caleFisier[1024];
     int fisierBMP;
 
-    sprintf(caleFisier, "%s/%s", caleIn, numeFisier);
+    sprintf(caleFisier, "%s/%s", directorIn, numeFisier);
 
     fisierBMP = open(caleFisier, O_RDONLY);
 
@@ -186,13 +186,14 @@ void covertireGri(int fisierIn, int lungime, int inaltime)
     close(fisierIn);
 }
 
-void procesulCeluiDeAlDoileaCopilFisierBMP(int fisierIn, int lungime, int inaltime) 
+void procesulCopiluluiFisierBMP(char *directorIn, int lungime, int inaltime, int fisierIn)
 {
+    citeste_lungime_inaltime_bmp(directorIn, intrare->d_name, &lungime, &inaltime);
     covertireGri(fisierIn, lungime, inaltime);
     exit(0); //succes
 }
 
-void procesulTataluiPtCopilulDoiFisierBMP(int PID)
+void procesulTataluiFisierBMP(int PID)
 {
     int status;
 
@@ -204,35 +205,30 @@ void procesulTataluiPtCopilulDoiFisierBMP(int PID)
     }
 }
 
-void procesCopilFisierObisnuitContinut(int pipe_fd1, char *caleFisier)
+void procesulCopiluluiFisierObisnuit(int pipe_fd[], char *caracter)
 {
-    dup2(pipe_fd1, 1);
-    execlp("cat", "cat", caleFisier, NULL); //acest proces va trebui sa genereze folosind o comanda conținutul fișierului obișnuit fără extensie .bmp pentru care a extras informațiile statistice
-    exit(-1);
-}
+    close(pipe_fd[1]); //inchide capătul de scriere al pipe-ului
+    dup2(pipe_fd[0], 0);
+    close(pipe_fd[0]); //inchide capătul de citire al pipe-ului
 
-void procesTataFisierObisnuitContinut(int PID)
-{
-    int status;
-
-    waitpid(PID, &status, 0);
-
-    if (WIFEXITED(status)) 
-    {
-        printf("S-a încheiat procesul cu PID-ul %d și codul %d. Fisier obisnuit -> continut.\n", PID, WEXITSTATUS(status));
-    }
-}
-
-void procesCopilFisierObisnuitPropozitii(int pipe_fd0, char *caracter)
-{
-    dup2(pipe_fd0, 0);
     execlp("bash", "bash", "shellscript.sh", caracter, NULL); //va calcula, din secvența primită de la procesul fiu responsabil cu generarea conținutului fișierului, numărul de propoziții corecte
     perror("Eroare la executarea script-ului");
     exit(-1);
 }
 
-void procesTataFisierObisnuitPropozitii(int PID, int n, char *caracter)
+void procesulTataluiFisierObisnuit(int PID, int n, char *caracter, int pipe_fd[], int fisierIn)
 {
+    close(pipe_fd[0]); //inchide capatul de citire a pipe-ului
+
+    int bytesRead; //scrie conținutul fișierului în capătul de scriere al pipe-ului
+
+    while ((bytesRead = read(fisierIn, buffer, sizeof(buffer))) > 0) 
+    {
+        write(pipe_fd[1], buffer, bytesRead); //acest capat va fi folosit pentru a primi rezultatul (numărul de propoziții) de la procesul copil
+    }
+
+    close(pipe_fd[1]); //inchid capatul de scriere al pipe-ului, semnaland procesului copil că nu mai sunt date de scris
+
     int status;
 
     waitpid(PID, &status, 0);
@@ -245,231 +241,7 @@ void procesTataFisierObisnuitPropozitii(int PID, int n, char *caracter)
     }
 }
 
-void extrageInfo(char *caleIn, char *caleOut, char *caracter) 
-{
-    struct stat fisierStat;
-    char caleFisier[1024];
-    int fisierOut;
-    int fisierIn;
-    char caleFisierOut[1024];
-    int lungime = 0;
-    int inaltime = 0;
-    struct passwd *userInfo;
-    struct group *grupInfo;
-    char caleaTarget[256];
-    char buffer2[1024];
-    char buffer3[1024];
-    char buffer4[1024];
-    char buffer5[1024];
-    int n = 0; //nr propozitii corecte
-    int pipe_fd[2];
-
-    sprintf(caleFisier, "%s/%s", caleIn, intrare->d_name);
-    sprintf(caleFisierOut, "%s/%s_statistica.txt", caleOut, intrare->d_name);
-
-    if (lstat(caleFisier, &fisierStat) == -1) 
-    {
-        perror("Eroare la obtinerea informatiilor din fisierul de intrare");
-        return;
-    }
-
-    fisierOut = open(caleFisierOut, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
-
-    if (fisierOut == -1) 
-    {
-        perror("Eroare la deschiderea fisierului de iesire statistica.txt");
-        return;
-    }
-
-    if (S_ISREG(fisierStat.st_mode)) //fișier obișnuit
-    {
-        sprintf(buffer, "nume fisier: %s\n", intrare->d_name);
-        write(fisierOut, buffer, strlen(buffer));
-
-        fisierIn = open(caleFisier, O_RDWR);
-
-        if (fisierIn == -1) 
-        {
-            perror("Eroare la deschiderea fisierului de intrare");
-            return;
-        }
-
-        if (strstr(intrare->d_name, ".bmp")) 
-        {
-            citeste_lungime_inaltime_bmp(caleIn, intrare->d_name, &lungime, &inaltime);
-
-            sprintf(buffer, "inaltime: %d\nlungime: %d\n", inaltime, lungime);
-            write(fisierOut, buffer, strlen(buffer));
-            liniiScrise = liniiScrise + 10;
-
-            //covertirea grayscale
-            int convertPID = fork(); // pentru fiecare intrare ce reprezinta o imagine .bmp procesul părinte va crea un al doilea proces 
-
-            if (convertPID < 0) 
-            {
-                perror("Eroare la crearea procesului fiu");
-            } 
-            else if (convertPID == 0) 
-            {
-                procesulCeluiDeAlDoileaCopilFisierBMP(fisierIn, lungime, inaltime);
-            }
-            else if (convertPID > 0) 
-            {
-                procesulTataluiPtCopilulDoiFisierBMP(convertPID);
-            }
-        } 
-        else // pentru categoria fișierelor obișnuite care nu au extensia .bmp
-        {
-            sprintf(buffer, "dimensiune: %ld\n", fisierStat.st_size);
-            write(fisierOut, buffer, strlen(buffer));
-            liniiScrise = liniiScrise + 8;
-
-            if (pipe(pipe_fd) == -1)
-            {
-                perror("Eroare la crearea pipe-ului");
-                exit(-1);
-            }
-
-            int continutPID = fork(); //părintele va mai crea cate un proces fiu
-
-            if (continutPID < 0) 
-            {
-                perror("Eroare la crearea procesului fiu");
-            } 
-            if (continutPID == 0)  //procesul copil 
-            {
-                close(pipe_fd[0]); //inchide capatul de citire a pipe-ului           
-                procesCopilFisierObisnuitContinut(pipe_fd[1], caleFisier);
-            } 
-            else if (continutPID > 0) //procesul parinte 
-            {
-                procesTataFisierObisnuitContinut(continutPID);
-                close(pipe_fd[1]); //inchide capatul de scriere a pipe-ului
-            } //va trimite acest conținut celuilalt proces fiu creat de părinte
-
-            int numarPropPID = fork(); //Cel de-al doilea proces fiu creat de părinte pentru fiecare fișier obișnuit fără extensia .bmp
-
-            if (numarPropPID < 0) 
-            {
-                perror("Eroare la crearea procesului fiu");
-            } 
-            if (numarPropPID == 0) //procesul copil 
-            {
-                close(pipe_fd[1]); //inchide capatul de scriere a pipe-ului   
-                procesCopilFisierObisnuitPropozitii(pipe_fd[0], caracter);
-            } 
-            else if (numarPropPID > 0) //procesul parinte 
-            {
-                close(pipe_fd[0]); //inchide capatul de citire a pipe-ului
-                close(pipe_fd[1]); //inchide capatul de scriere a pipe-ului
-                //va transmite acest număr părintelui printr-un pipe
-                procesTataFisierObisnuitPropozitii(numarPropPID, n, caracter);
-            }
-        }
-
-        userInfo = getpwuid(fisierStat.st_uid);
-        grupInfo = getgrgid(fisierStat.st_gid);
-
-        sprintf(buffer, "identificatorul utilizatorului: %s\ntimpul ultimei modificari: %scontorul de legaturi: %lu\n", userInfo->pw_name, ctime(&fisierStat.st_mtime), fisierStat.st_nlink);
-
-        write(fisierOut, buffer, strlen(buffer));
-        
-        if (userInfo != NULL) 
-        {
-            scrie_permisiuni_user(fisierStat.st_mode, buffer2);
-            write(fisierOut, buffer2, strlen(buffer2));
-        }
-
-        if (grupInfo != NULL) 
-        {
-            scrie_permisiuni_grup(fisierStat.st_mode,buffer3);
-            write(fisierOut, buffer3, strlen(buffer3));
-        }
-
-        if (grupInfo != NULL) 
-        {  
-            scrie_permisiuni_altii(fisierStat.st_mode,buffer4);
-            write(fisierOut, buffer4, strlen(buffer4));
-        }
-    } 
-    else if (S_ISLNK(fisierStat.st_mode)) //legatura simbolica
-    {    
-        if (readlink(caleFisier, caleaTarget, sizeof(caleaTarget)) == -1) 
-        {
-            perror("Eroare la citirea legaturii simbolice");
-            return;
-        }
-
-        userInfo = getpwuid(fisierStat.st_uid);
-        grupInfo = getgrgid(fisierStat.st_gid);
-
-        sprintf(buffer, "nume legatura: %s\ndimensiune legatura: %ld\n",intrare->d_name, fisierStat.st_size);
-        
-        write(fisierOut, buffer, strlen(buffer));
-
-        sprintf(buffer5, "target: %s\n", caleaTarget);
-        write(fisierOut, buffer5, strlen(buffer5));
-
-        if (userInfo != NULL) 
-        {
-            scrie_permisiuni_user(fisierStat.st_mode, buffer2);
-            write(fisierOut, buffer2, strlen(buffer2));
-        }
-
-        if (grupInfo != NULL) 
-        {
-            scrie_permisiuni_grup(fisierStat.st_mode,buffer3);
-            write(fisierOut, buffer3, strlen(buffer3));
-        }
-
-        if (grupInfo != NULL) 
-        {  
-            scrie_permisiuni_altii(fisierStat.st_mode,buffer4);
-            write(fisierOut, buffer4, strlen(buffer4));
-        }
-
-        liniiScrise = liniiScrise + 6;
-    } 
-    else if (S_ISDIR(fisierStat.st_mode)) //director
-    {
-        userInfo = getpwuid(fisierStat.st_uid);
-        grupInfo = getgrgid(fisierStat.st_gid);
-
-        sprintf(buffer, "nume director: %s\nidentificatorul utilizatorului: %s\ndrepturi de acces user: ",intrare->d_name, userInfo->pw_name);
-        
-        write(fisierOut, buffer, strlen(buffer));
-        
-        if (userInfo != NULL) 
-        {
-            scrie_permisiuni_user(fisierStat.st_mode, buffer2);
-            write(fisierOut, buffer2, strlen(buffer2));
-        }
-
-        if (grupInfo != NULL) 
-        {
-            scrie_permisiuni_grup(fisierStat.st_mode,buffer3);
-            write(fisierOut, buffer3, strlen(buffer3));
-        }
-
-        if (grupInfo != NULL) 
-        {  
-            scrie_permisiuni_altii(fisierStat.st_mode,buffer4);
-            write(fisierOut, buffer4, strlen(buffer4));
-        }
-
-        liniiScrise = liniiScrise + 5;
-    }
-
-    close(fisierOut);
-}
-
-void procesulPrimuluiCopil(char *caleIn, char *caleOut, int *liniiScrise, char *caracter) 
-{
-    extrageInfo(caleIn, caleOut, caracter);
-    exit(*liniiScrise); //La încheierea fiecărui proces fiu, acesta va trimite părintelui numărul de linii scrise în fișierul statistica.txt.
-}
-
-void procesulTataluiPtPrimulCopil(int nrCopii, int PID, int statusIesire[]) 
+void procesulTataluiCopilPrincipal(int nrCopii, int PID, int statusIesire[]) 
 {
     int status;
 
@@ -495,11 +267,27 @@ int main(int argc, char **argv)
     DIR *dir;
     int PID;
     int statusIesire[1024];  // array sa stochez exit status la fiecare copil
+    struct stat fisierStat;
+    char caleFisier[1024];
+    int fisierOut;
+    int fisierIn;
+    char caleFisierOut[1024];
+    int lungime = 0;
+    int inaltime = 0;
+    struct passwd *userInfo;
+    struct group *grupInfo;
+    char caleaTarget[256];
+    char buffer2[1024];
+    char buffer3[1024];
+    char buffer4[1024];
+    char buffer5[1024];
+    int n = 0; //nr propozitii corecte
+    int pipe_fd[2];
     
     if (argc != 4) 
     {
         perror("Folosire: <director_intrare> <director_iesire> <c>");
-        return -1;
+        exit(-1);
     }
 
     dir = opendir(directorIn);
@@ -507,31 +295,243 @@ int main(int argc, char **argv)
     if (dir == NULL) 
     {
         perror("Eroare la deschiderea directorului de intrare");
-        return -1;
+        exit(-1);;
+    }
+
+    if (pipe(pipe_fd) == -1) 
+    {
+        perror("Eroare la crearea pipe-ului");
+        exit(-1);
     }
 
     while ((intrare = readdir(dir)) != NULL) //Pentru fiecare intrare (fișier obișnuit, fișier.bmp, director, legătură simbolică ce indică spre un fișier obișnuit) din directorul de intrare
     {
         if (strcmp(intrare->d_name, ".") != 0 && strcmp(intrare->d_name, "..") != 0) 
         {
+            sprintf(caleFisier, "%s/%s", directorIn, intrare->d_name);
+
+            if (lstat(caleFisier, &fisierStat) == -1) 
+            {
+                perror("Eroare la obtinerea informatiilor din fisierul de intrare");
+                exit(-1);
+            }
+
             PID = fork(); // procesul părinte va crea câte un nou proces
 
-            if (PID == 0) //procesul copil
+            if (PID < 0) // eroare
             {
-                procesulPrimuluiCopil(directorIn, directorOut, &liniiScrise, caracter);
+                perror("Eroare la crearea procesului copil principal");
+                exit(-1);
             } 
-            else if (PID < 0) // eroare
+            else if (PID == 0) //procesul copil
             {
-                perror("Eroare la crearea procesului copil");
+                close(pipe_fd[1]); //inchid capatul de scriere al pipe-ului în procesul copil
+
+                sprintf(caleFisierOut, "%s/%s_statistica.txt", directorOut, intrare->d_name);
+
+                fisierOut = open(caleFisierOut, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
+
+                if (fisierOut == -1) 
+                {
+                    perror("Eroare la deschiderea fisierului de iesire statistica.txt");
+                    exit(-1);
+                }
+
+                if (S_ISREG(fisierStat.st_mode)) //fișier obișnuit
+                {
+                    sprintf(buffer, "nume fisier: %s\n", intrare->d_name);
+                    write(fisierOut, buffer, strlen(buffer));
+
+                    fisierIn = open(caleFisier, O_RDWR);
+
+                    if (fisierIn == -1) 
+                    {
+                        perror("Eroare la deschiderea fisierului de intrare");
+                        exit(-1);
+                    }
+
+                    if (strstr(intrare->d_name, ".bmp")) 
+                    {
+                        citeste_lungime_inaltime_bmp(directorIn, intrare->d_name, &lungime, &inaltime);
+
+                        sprintf(buffer, "inaltime: %d\nlungime: %d\n", inaltime, lungime);
+                        write(fisierOut, buffer, strlen(buffer));
+                        liniiScrise = liniiScrise + 10;
+                    } 
+                    else //fisier obisnuit
+                    {
+                        sprintf(buffer, "dimensiune: %ld\n", fisierStat.st_size);
+                        write(fisierOut, buffer, strlen(buffer));
+                        liniiScrise = liniiScrise + 8;
+                    }
+
+                    userInfo = getpwuid(fisierStat.st_uid);
+                    grupInfo = getgrgid(fisierStat.st_gid);
+
+                    sprintf(buffer, "identificatorul utilizatorului: %s\ntimpul ultimei modificari: %scontorul de legaturi: %lu\n", userInfo->pw_name, ctime(&fisierStat.st_mtime), fisierStat.st_nlink);
+
+                    write(fisierOut, buffer, strlen(buffer));
+                    
+                    if (userInfo != NULL) 
+                    {
+                        scrie_permisiuni_user(fisierStat.st_mode, buffer2);
+                        write(fisierOut, buffer2, strlen(buffer2));
+                    }
+
+                    if (grupInfo != NULL) 
+                    {
+                        scrie_permisiuni_grup(fisierStat.st_mode,buffer3);
+                        write(fisierOut, buffer3, strlen(buffer3));
+                    }
+
+                    if (grupInfo != NULL) 
+                    {  
+                        scrie_permisiuni_altii(fisierStat.st_mode,buffer4);
+                        write(fisierOut, buffer4, strlen(buffer4));
+                    }
+
+                    if(!strstr(intrare->d_name, ".bmp")) // acest proces va trebui sa genereze folosind o comanda conținutul fișierului obișnuit fără extensie .bmp pentru care a extras informațiile statistice și va trimite acest conținut celuilalt proces fiu creat de părinte
+                    {
+                        close(pipe_fd[0]); //inchide capătul de citire al pipe-ului
+
+                        dup2(pipe_fd[1], 1); //redirectez intrarea standard către capatul de scriere al pipe-ului                     
+                        execlp("cat", "cat", caleFisier, NULL);
+                        exit(-1);
+                    }
+                } 
+                else if (S_ISLNK(fisierStat.st_mode)) //legatura simbolica
+                {    
+                    if (readlink(caleFisier, caleaTarget, sizeof(caleaTarget)) == -1) 
+                    {
+                        perror("Eroare la citirea legaturii simbolice");
+                        exit(-1);
+                    }
+
+                    userInfo = getpwuid(fisierStat.st_uid);
+                    grupInfo = getgrgid(fisierStat.st_gid);
+
+                    sprintf(buffer, "nume legatura: %s\ndimensiune legatura: %ld\n",intrare->d_name, fisierStat.st_size);
+                    
+                    write(fisierOut, buffer, strlen(buffer));
+
+                    sprintf(buffer5, "target: %s\n", caleaTarget);
+                    write(fisierOut, buffer5, strlen(buffer5));
+
+                    if (userInfo != NULL) 
+                    {
+                        scrie_permisiuni_user(fisierStat.st_mode, buffer2);
+                        write(fisierOut, buffer2, strlen(buffer2));
+                    }
+
+                    if (grupInfo != NULL) 
+                    {
+                        scrie_permisiuni_grup(fisierStat.st_mode,buffer3);
+                        write(fisierOut, buffer3, strlen(buffer3));
+                    }
+
+                    if (grupInfo != NULL) 
+                    {  
+                        scrie_permisiuni_altii(fisierStat.st_mode,buffer4);
+                        write(fisierOut, buffer4, strlen(buffer4));
+                    }
+
+                    liniiScrise = liniiScrise + 6;
+                } 
+                else if (S_ISDIR(fisierStat.st_mode)) //director
+                {
+                    userInfo = getpwuid(fisierStat.st_uid);
+                    grupInfo = getgrgid(fisierStat.st_gid);
+
+                    sprintf(buffer, "nume director: %s\nidentificatorul utilizatorului: %s\ndrepturi de acces user: ",intrare->d_name, userInfo->pw_name);
+                    
+                    write(fisierOut, buffer, strlen(buffer));
+                    
+                    if (userInfo != NULL) 
+                    {
+                        scrie_permisiuni_user(fisierStat.st_mode, buffer2);
+                        write(fisierOut, buffer2, strlen(buffer2));
+                    }
+
+                    if (grupInfo != NULL) 
+                    {
+                        scrie_permisiuni_grup(fisierStat.st_mode,buffer3);
+                        write(fisierOut, buffer3, strlen(buffer3));
+                    }
+
+                    if (grupInfo != NULL) 
+                    {  
+                        scrie_permisiuni_altii(fisierStat.st_mode,buffer4);
+                        write(fisierOut, buffer4, strlen(buffer4));
+                    }
+
+                    liniiScrise = liniiScrise + 5;
+                }
+
+                close(fisierOut);
+                exit(liniiScrise); //La încheierea fiecărui proces fiu, acesta va trimite părintelui numărul de linii scrise în fișierul statistica.txt
             } 
             else 
             {
+                if(S_ISREG(fisierStat.st_mode) && strstr(intrare->d_name, ".bmp")) // pentru fiecare intrare ce reprezinta o imagine .bmp procesul părinte va crea un al doilea proces (pe langa cel responsabil de scrierea de informații în fișierul de statistică), care sa citească întreg conținutul fișierului și care va converti imaginea în tonuri de gri
+                {               
+                    fisierIn = open(caleFisier, O_RDWR);
+
+                    if (fisierIn == -1) 
+                    {
+                        perror("Eroare la deschiderea fisierului de intrare");
+                        exit(-1);
+                    }
+
+                    //covertirea grayscale
+                    int convertPID = fork();
+
+                    if (convertPID < 0) 
+                    {
+                        perror("Eroare la crearea procesului fiu pentru convertirea grayscale");
+                        exit(-1);
+                    } 
+                    else if (convertPID == 0) 
+                    {
+                        procesulCopiluluiFisierBMP(directorIn, lungime, inaltime, fisierIn);
+                    }
+                    else if (convertPID > 0) 
+                    {
+                        procesulTataluiFisierBMP(convertPID);
+                    }
+                }
+
+                if(S_ISREG(fisierStat.st_mode) && !strstr(intrare->d_name, ".bmp")) 
+                { 
+                    fisierIn = open(caleFisier, O_RDWR);
+
+                    if (fisierIn == -1) 
+                    {
+                        perror("Eroare la deschiderea fisierului de intrare");
+                        exit(-1);
+                    }
+
+                    int numarPropPID = fork(); //Cel de-al doilea proces fiu creat de părinte pentru fiecare fișier obișnuit fără extensia .bmp
+
+                    if (numarPropPID < 0) 
+                    {
+                        perror("Eroare la crearea procesului fiu pentru numar propozitii");
+                        exit(-1);
+                    } 
+                    if (numarPropPID == 0) //procesul copil 
+                    {
+                        procesulCopiluluiFisierObisnuit(pipe_fd, caracter);
+                    } 
+                    else if (numarPropPID > 0) //procesul parinte 
+                    {
+                        procesulTataluiFisierObisnuit(numarPropPID, n, caracter, pipe_fd, fisierIn);
+                    }
+                }
                 statusIesire[nrCopii++] = 0;  // initializarea statusului de iesire a fiecarui fiu
             }
         }
     }
 
-    procesulTataluiPtPrimulCopil(nrCopii, PID, statusIesire);
+    procesulTataluiCopilPrincipal(nrCopii, PID, statusIesire);
     
     closedir(dir);
 
