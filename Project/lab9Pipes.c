@@ -253,8 +253,18 @@ void procesulTataluiCopilPrincipal(int nrCopii, int PID, int statusIesire[])
         if (WIFEXITED(status)) 
         {
             statusIesire[i] = WEXITSTATUS(status);
-            liniiScrise += statusIesire[i];
-            printf("S-a încheiat procesul cu PID-ul %d și codul %d. Nr de linii scrise în fișierul statistica.txt este %d\n", PID, statusIesire[i], liniiScrise);
+            printf("S-a încheiat procesul cu PID-ul %d și codul %d.\n", PID, statusIesire[i]);\
+
+            if(statusIesire[i] != 0)
+            {
+                liniiScrise += statusIesire[i];
+                printf("Nr de linii scrise în fișierul statistica.txt este %d\n", liniiScrise);
+            }
+            else
+            {
+                liniiScrise += 8;
+                printf("Nr de linii scrise în fișierul statistica.txt (fisier obisnuit) este %d\n", liniiScrise);
+            }
         }
     }
 }
