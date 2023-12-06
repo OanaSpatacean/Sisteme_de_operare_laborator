@@ -16,7 +16,7 @@ while read -r linie
 do #verifica dacă linia este corectă
     if [[ $linie =~ ^[A-Z] ]] #verifica daca linia incepe cu litera mare
     then
-        if [[ $linie =~ ^[A-Za-z0-9\,\ \.!\?]+$ ]] #verifica daca linia contine doar caractere alfanumerice, spatii, virgule, puncte, semne de exclamare sau semne de intrebare
+        if [[ $linie =~ ^[A-Za-z0-9\,\ \.!\?]+$ ]] #verifica daca linia contine doar litere mari, mici, spatii, virgule, punct, semn de exclamare sau semn de intrebare
         then
             if [[ $linie =~ [!\?\.]$ ]] #verifica daca linia se termina cu semnul intrebarii, semnul exclamarii sau punct
             then
