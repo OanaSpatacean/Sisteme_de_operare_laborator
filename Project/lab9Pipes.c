@@ -205,42 +205,6 @@ void procesulTataluiFisierBMP(int PID)
     }
 }
 
-void procesulCopiluluiFisierObisnuit(int pipe_fd[], char *caracter)
-{
-    close(pipe_fd[1]); //inchide capătul de scriere al pipe-ului
-    dup2(pipe_fd[0], 0);
-    close(pipe_fd[0]); //inchide capătul de citire al pipe-ului
-
-    execlp("bash", "bash", "shellscript.sh", caracter, NULL); //va calcula, din secvența primită de la procesul fiu responsabil cu generarea conținutului fișierului, numărul de propoziții corecte
-    perror("Eroare la executarea script-ului");
-    exit(-1);
-}
-
-void procesulTataluiFisierObisnuit(int PID, int n, char *caracter, int pipe_fd[], int fisierIn)
-{
-    close(pipe_fd[0]); //inchide capatul de citire a pipe-ului
-
-    int bytesRead; //scrie conținutul fișierului în capătul de scriere al pipe-ului
-
-    while ((bytesRead = read(fisierIn, buffer, sizeof(buffer))) > 0) 
-    {
-        write(pipe_fd[1], buffer, bytesRead); //acest capat va fi folosit pentru a primi rezultatul (numărul de propoziții) de la procesul copil
-    }
-
-    close(pipe_fd[1]); //inchid capatul de scriere al pipe-ului, semnaland procesului copil că nu mai sunt date de scris
-
-    int status;
-
-    waitpid(PID, &status, 0);
-
-    if (WIFEXITED(status)) 
-    {
-        n = n + WEXITSTATUS(status);
-        printf("S-a încheiat procesul cu PID-ul %d și codul %d. Fisier obisnuit -> propozitii.\n", PID, WEXITSTATUS(status));
-        printf("--> Au fost identificate in total %d propozitii corecte care contin caracterul %s.\n", n, caracter);
-    }
-}
-
 void procesulTataluiCopilPrincipal(int nrCopii, int PID, int statusIesire[]) 
 {
     int status;
@@ -293,6 +257,8 @@ int main(int argc, char **argv)
     char buffer5[1024];
     int n = 0; //nr propozitii corecte
     int pipe_fd[2];
+    int pipe_fd2[2];
+    char numarPropozitii[4096];
     
     if (argc != 4) 
     {
@@ -311,6 +277,11 @@ int main(int argc, char **argv)
     if (pipe(pipe_fd) == -1) 
     {
         perror("Eroare la crearea pipe-ului");
+        exit(-1);
+    }
+    if (pipe(pipe_fd2) == -1) 
+    {
+        perror("Eroare la crearea pipe-ului 2" );
         exit(-1);
     }
 
@@ -335,7 +306,7 @@ int main(int argc, char **argv)
             } 
             else if (PID == 0) //procesul copil
             {
-                close(pipe_fd[1]); //inchid capatul de scriere al pipe-ului în procesul copil
+                //close(pipe_fd[1]); //inchid capatul de scriere al pipe-ului în procesul copil
 
                 sprintf(caleFisierOut, "%s/%s_statistica.txt", directorOut, intrare->d_name);
 
@@ -529,11 +500,42 @@ int main(int argc, char **argv)
                     } 
                     if (numarPropPID == 0) //procesul copil 
                     {
-                        procesulCopiluluiFisierObisnuit(pipe_fd, caracter);
+                        close(pipe_fd[1]); //inchide capătul de scriere al pipe-ului
+                        dup2(pipe_fd[0], 0);
+                        dup2(pipe_fd2[1], 1);
+                        close(pipe_fd2[0]);
+
+                        //read
+	                    read(pipe_fd2[0],numarPropozitii,sizeof(numarPropozitii));
+
+                        execlp("bash", "bash", "shellscript.sh", caracter, NULL); //va calcula, din secvența primită de la procesul fiu responsabil cu generarea conținutului fișierului, numărul de propoziții corecte
+                        perror("Eroare la executarea script-ului");
+                        exit(-1);
                     } 
                     else if (numarPropPID > 0) //procesul parinte 
                     {
-                        procesulTataluiFisierObisnuit(numarPropPID, n, caracter, pipe_fd, fisierIn);
+                        close(pipe_fd[0]); //inchide capatul de citire a pipe-ului
+
+                        int bytesRead; //scrie conținutul fișierului în capătul de scriere al pipe-ului
+
+                        while ((bytesRead = read(fisierIn, buffer, sizeof(buffer))) > 0) 
+                        {
+                            write(pipe_fd[1], buffer, bytesRead); //acest capat va fi folosit pentru a primi rezultatul (numărul de propoziții) de la procesul copil
+                        }
+
+                        close(pipe_fd[1]); //inchid capatul de scriere al pipe-ului, semnaland procesului copil că nu mai sunt date de scris
+
+                        int status;
+
+                        waitpid(PID, &status, 0);
+
+                        if (WIFEXITED(status)) 
+                        {
+                            //n = n + WEXITSTATUS(status);
+                            n = atoi(numarPropozitii);
+                            printf("S-a încheiat procesul cu PID-ul %d și codul %d. Fisier obisnuit -> propozitii.\n", PID, WEXITSTATUS(status));
+                            printf("--> Au fost identificate in total %d propozitii corecte care contin caracterul %s.\n", n, caracter);
+                        }
                     }
                 }
                 statusIesire[nrCopii++] = 0;  // initializarea statusului de iesire a fiecarui fiu

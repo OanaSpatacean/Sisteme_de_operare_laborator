@@ -33,4 +33,4 @@ do #verifica dacă linia este corectă
 done
 
 #returneaza numărul de propoziții corecte
-exit $nr_propozitii_corecte;
+echo $nr_propozitii_corecte;
